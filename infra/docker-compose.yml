@@ -1,0 +1,38 @@
+services:
+  # ── PostgreSQL ──────────────────────────────────────────────────────────────
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: user
+      POSTGRES_PASSWORD: pass
+      POSTGRES_DB: tollgate
+    ports:
+      - "5433:5432"   # host port 5433 to avoid conflicts with a local Postgres
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U user -d tollgate"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ── Stellar Quickstart (testnet) ────────────────────────────────────────────
+  stellar:
+    image: stellar/quickstart:latest
+    restart: unless-stopped
+    command: ["--testnet", "--enable-soroban-rpc"]
+    ports:
+      - "8000:8000"   # Horizon API
+      - "8080:8080"   # Soroban RPC
+    environment:
+      # Quickstart auto-funds the NETWORK_PASSPHRASE for testnet
+      NETWORK_PASSPHRASE: "Test SDF Network ; September 2015"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/"]
+      interval: 15s
+      timeout: 10s
+      retries: 10
+
+volumes:
+  postgres_data:
