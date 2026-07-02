@@ -1,0 +1,13 @@
+[package]
+name = "tollgate-sdk"
+version = "0.1.0"
+edition = "2021"
+description = "Tollgate Rust SDK for native/Rust AI agents"
+license = "MIT"
+publish = false
+
+[dependencies]
+soroban-sdk = { version = "21.0.0", features = ["alloc"] }
+
+[dev-dependencies]
+soroban-sdk = { version = "21.0.0", features = ["testutils"] }
