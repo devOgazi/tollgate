@@ -1,0 +1,21 @@
+{
+  "name": "tollgate",
+  "private": true,
+  "version": "0.0.1",
+  "description": "Non-custodial, metered payment infrastructure for autonomous AI agents — built on Stellar & Soroban",
+  "engines": {
+    "node": ">=20",
+    "pnpm": ">=9"
+  },
+  "scripts": {
+    "dev": "pnpm -r run dev",
+    "build": "pnpm -r run build",
+    "lint": "pnpm -r run lint",
+    "test": "pnpm -r run test",
+    "test:e2e": "pnpm run test:e2e",
+    "contracts:deploy:testnet": "bash scripts/deploy-contracts.sh testnet"
+  },
+  "devDependencies": {
+    "typescript": "5.5.4"
+  }
+}

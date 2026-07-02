@@ -1,0 +1,6 @@
+packages:
+  - "frontend"
+  - "backend"
+  - "sdk/ts"
+allowBuilds:
+  unrs-resolver: true
