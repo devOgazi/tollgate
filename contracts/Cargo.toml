@@ -1,0 +1,8 @@
+# contracts/Cargo.toml
+#
+# This file is intentionally minimal. The Cargo workspace is defined at the
+# repo root (../Cargo.toml) and includes all crates under contracts/ and sdk/rust/.
+#
+# To build all contracts:
+#   cargo build --workspace                          (native, for tests)
+#   cargo build --workspace --target wasm32-unknown-unknown --release
