@@ -1,2 +1,4 @@
-// api/index.ts — REST/GraphQL route stubs. Implementation comes in a later milestone.
-export {};
+/**
+ * api/index.ts — barrel export for the API layer.
+ */
+export { apiRouter } from "./router";

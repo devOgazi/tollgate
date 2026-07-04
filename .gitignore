@@ -12,6 +12,9 @@ pnpm-debug.log
 target/
 Cargo.lock
 
+# Soroban test snapshots (generated, not committed)
+test_snapshots/
+
 # Environment
 .env
 .env.local

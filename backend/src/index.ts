@@ -1,7 +1,7 @@
-// Tollgate backend — entry point stub.
-// Full implementation (routes, facilitator, indexer) comes in a later milestone.
-import express, { Express } from "express";
+// Tollgate backend — entry point.
+import express, { Express, Request, Response } from "express";
 import dotenv from "dotenv";
+import { apiRouter } from "./api";
 
 dotenv.config();
 
@@ -10,8 +10,17 @@ const PORT = process.env.PORT ?? 4000;
 
 app.use(express.json());
 
-app.get("/health", (_req, res) => {
+// ── Health check ──────────────────────────────────────────────────────────────
+app.get("/health", (_req: Request, res: Response) => {
   res.json({ status: "ok" });
+});
+
+// ── API v1 ────────────────────────────────────────────────────────────────────
+app.use("/api/v1", apiRouter);
+
+// ── 404 fallback ──────────────────────────────────────────────────────────────
+app.use((_req: Request, res: Response) => {
+  res.status(404).json({ error: "Not Found" });
 });
 
 app.listen(PORT, () => {

@@ -166,6 +166,8 @@ mod tests {
         (env, contract_id, grantor, agent)
     }
 
+    // ── Existing tests ────────────────────────────────────────────────────────
+
     #[test]
     fn test_create_and_read_policy() {
         let (env, contract_id, grantor, agent) = setup();
@@ -229,12 +231,103 @@ mod tests {
         let (env, contract_id, grantor, agent) = setup();
         let client = BudgetPolicyContractClient::new(&env, &contract_id);
 
+        // window_end = 1 (a timestamp in the past once we advance the ledger)
         client.create_policy(&grantor, &agent, &1_000_000, &100_000, &1);
 
         env.ledger().with_mut(|l| {
             l.timestamp = 1000;
         });
 
+        assert!(!client.check_spend(&agent, &1));
+    }
+
+    // ── New tests ─────────────────────────────────────────────────────────────
+
+    /// record_spend should panic when the cumulative spend would exceed max_total.
+    #[test]
+    #[should_panic(expected = "exceeds total budget")]
+    fn test_record_spend_over_total_panics() {
+        let (env, contract_id, grantor, agent) = setup();
+        let client = BudgetPolicyContractClient::new(&env, &contract_id);
+
+        // max_total = 100, max_per_call = 100 — first spend consumes the whole budget
+        client.create_policy(&grantor, &agent, &100, &100, &0);
+        client.record_spend(&agent, &100); // ok: spent = 100
+        client.record_spend(&agent, &1);  // panics: 100 + 1 > 100
+    }
+
+    /// record_spend should panic when amount exceeds the per-call cap.
+    #[test]
+    #[should_panic(expected = "exceeds per-call cap")]
+    fn test_record_spend_over_per_call_panics() {
+        let (env, contract_id, grantor, agent) = setup();
+        let client = BudgetPolicyContractClient::new(&env, &contract_id);
+
+        // max_per_call = 50, amount = 100 — violates per-call cap
+        client.create_policy(&grantor, &agent, &1_000_000, &50, &0);
+        client.record_spend(&agent, &100); // panics: 100 > 50
+    }
+
+    /// record_spend should panic when the policy has been revoked.
+    #[test]
+    #[should_panic(expected = "policy revoked")]
+    fn test_record_spend_on_revoked_panics() {
+        let (env, contract_id, grantor, agent) = setup();
+        let client = BudgetPolicyContractClient::new(&env, &contract_id);
+
+        client.create_policy(&grantor, &agent, &1_000_000, &100_000, &0);
+        client.revoke(&grantor, &agent);
+        client.record_spend(&agent, &1); // panics: policy revoked
+    }
+
+    /// record_spend should panic when the policy's time window has expired.
+    #[test]
+    #[should_panic(expected = "policy expired")]
+    fn test_record_spend_on_expired_panics() {
+        let (env, contract_id, grantor, agent) = setup();
+        let client = BudgetPolicyContractClient::new(&env, &contract_id);
+
+        client.create_policy(&grantor, &agent, &1_000_000, &100_000, &1);
+
+        // Advance ledger past window_end
+        env.ledger().with_mut(|l| {
+            l.timestamp = 1000;
+        });
+
+        client.record_spend(&agent, &1); // panics: policy expired
+    }
+
+    /// revoke should panic when called by an address that is not the grantor.
+    /// (mock_all_auths bypasses require_auth, so the panic comes from the
+    ///  `assert!(policy.grantor == grantor, "not grantor")` check inside revoke.)
+    #[test]
+    #[should_panic(expected = "not grantor")]
+    fn test_revoke_only_by_grantor() {
+        let (env, contract_id, grantor, agent) = setup();
+        let client = BudgetPolicyContractClient::new(&env, &contract_id);
+
+        // Create the policy with `grantor`
+        client.create_policy(&grantor, &agent, &1_000_000, &100_000, &0);
+
+        // A different address tries to revoke — must panic
+        let attacker = Address::generate(&env);
+        client.revoke(&attacker, &agent); // panics: not grantor
+    }
+
+    /// check_spend should return false when the remaining budget is less than
+    /// the requested amount (even if the amount itself is within the per-call cap).
+    #[test]
+    fn test_check_spend_after_total_exhausted() {
+        let (env, contract_id, grantor, agent) = setup();
+        let client = BudgetPolicyContractClient::new(&env, &contract_id);
+
+        // max_total = 100, max_per_call = 100
+        client.create_policy(&grantor, &agent, &100, &100, &0);
+
+        // Consume the entire budget
+        client.record_spend(&agent, &100);
+
+        // Any further spend — even 1 unit — should be denied
         assert!(!client.check_spend(&agent, &1));
     }
 }
