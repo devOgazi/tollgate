@@ -2,6 +2,7 @@
 import express, { Express, Request, Response } from "express";
 import dotenv from "dotenv";
 import { apiRouter } from "./api";
+import { startIndexer } from "./indexer";
 
 dotenv.config();
 
@@ -25,6 +26,10 @@ app.use((_req: Request, res: Response) => {
 
 app.listen(PORT, () => {
   console.log(`Tollgate backend listening on port ${PORT}`);
+
+  // Start the Soroban event indexer after the HTTP server is bound.
+  // The indexer is a no-op if no CONTRACT_ID_* env vars are set.
+  startIndexer();
 });
 
 export default app;
