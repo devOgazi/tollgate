@@ -67,6 +67,22 @@ The escrow record is stored on-chain with status `Locked`.  The `escrow_id`
 returned by `lock` is included in the agent's next request to the service as
 proof of payment.
 
+**Marketplace routing:** For marketplace-listed services, `Escrow::lock` is
+called automatically via a cross-contract call inside `Marketplace::create_request`:
+
+```rust
+pub fn create_request(
+    env: Env,
+    buyer: Address,    // agent making the request; must have pre-approved the token transfer
+    listing_id: u64,   // on-chain listing registered via Marketplace::register_listing
+    timeout: u64,      // Unix timestamp for the escrow expiry
+) -> u64               // marketplace request id
+```
+
+`create_request` looks up the listing's `token_addr` and `price_per_call`, then
+calls `Escrow::lock` internally.  It returns the marketplace request ID; the
+underlying escrow ID is stored in the `MarketRequest` record.
+
 ---
 
 ## Verify
@@ -110,62 +126,206 @@ interface VerifyResult {
 - `400 Bad Request` — malformed query parameters.
 - `502 Bad Gateway` — Horizon or Soroban RPC unreachable.
 
-**Known limitation (Day 2):** Full XDR decoding of `resultMetaXdr` to verify the
-exact amount and contract function invoked is deferred to Day 3 (requires
-`@stellar/stellar-sdk`).  When the `amount` query parameter is supplied, the
-response returns `valid: false` with a `reason` explaining the limitation.
+**Known limitation:** Full XDR decoding of `resultMetaXdr` to verify the
+exact amount and contract function invoked requires `@stellar/stellar-sdk`
+(Day 4 work).  When the `amount` query parameter is supplied, the response
+returns `valid: false` with a `reason` explaining the limitation.
 
 ---
 
 ## Fulfill / Release
 
 **x402 step:** After the service delivers the requested resource, the seller
-(or the facilitator on their behalf) calls `Escrow::release` to collect payment.
+(or the facilitator on their behalf) triggers `Escrow::release` to collect
+payment.
 
-**Soroban contract call:** `Escrow::release`
+### On-chain: `Escrow::release`
 
 ```rust
 pub fn release(
     env: Env,
-    buyer: Address,   // must match the buyer recorded at lock time
+    buyer: Address,   // must match the buyer recorded at Escrow::lock time
     escrow_id: u64,   // returned by the original Escrow::lock call
 )
 ```
 
 The function:
-- Asserts `record.status == Locked` (double-release is rejected).
-- Transfers `amount` tokens from the Escrow contract to `record.seller`.
-- Sets `record.status = Released`.
-- Emits a `released` contract event (picked up by the indexer for reputation scoring).
+- Asserts `record.buyer == buyer` (caller must be the recorded buyer).
+- Asserts `record.status == EscrowStatus::Locked` (double-release is rejected).
+- Transfers `record.amount` tokens from the Escrow contract to `record.seller`.
+- Sets `record.status = EscrowStatus::Released`.
+- Emits a `released` contract event: topics `["released", escrow_id]`, body `seller_address`.
 
-**Backend route (Day 3):** `POST /api/v1/marketplace/requests/:id/fulfill`
-calls `Escrow::release` on behalf of the seller using the facilitator's
-signing key.
+### Backend endpoint: `POST /api/v1/marketplace/requests/:id/fulfill`
+
+```
+POST /api/v1/marketplace/requests/:id/fulfill
+Content-Type: application/json
+
+{
+  "settleTxHash": "<stellar-tx-hash-of-Escrow::release>",   // optional
+  "resultMeta": { "summary": "..." }                        // optional seller metadata
+}
+```
+
+**Flow:**
+1. Seller submits `Escrow::release` on-chain (signed by their key).
+2. Seller (or facilitator) POSTs to this endpoint with the settlement tx hash.
+3. Backend updates the request row from `locked` → `fulfilled` in Postgres.
+4. The indexer independently detects the `released` event and writes it to the
+   `events` table, which triggers a `Reputation::record_success` call (Day 4).
+
+**Response 200:**
+```json
+{
+  "request": {
+    "id": "...",
+    "status": "fulfilled",
+    "settleTxHash": "...",
+    "updatedAt": "..."
+  }
+}
+```
+
+**Error responses:**
+- `404 Not Found` — request ID does not exist.
+- `422 Unprocessable Entity` — request is not in `locked` state (already fulfilled or refunded).
+
+### Reputation update: `Reputation::record_result`
+
+After a successful fulfill, the reputation contract is updated via:
+
+```rust
+pub fn record_result(
+    env: Env,
+    subject: Address,  // the seller's address
+    success: bool,     // true for a fulfill, false for a timeout/refund
+)
+```
+
+This is a thin wrapper that delegates to `record_success` or `record_failure`:
+
+```rust
+pub fn record_success(env: Env, subject: Address)  // increments successes counter
+pub fn record_failure(env: Env, subject: Address)  // increments failures counter
+```
+
+The indexer detects `released` / `refunded` events and triggers the appropriate
+call.  The resulting trust score in basis points [0, 10 000] is readable via:
+
+```rust
+pub fn trust_score_bps(env: Env, subject: Address) -> u64
+```
 
 ---
 
 ## Refund / Timeout
 
 **x402 step:** If the seller does not fulfill the request before `timeout`, the
-buyer may reclaim their funds by calling `Escrow::refund`.
+buyer may reclaim their funds.
 
-**Soroban contract call:** `Escrow::refund`
+### On-chain: `Escrow::refund`
 
 ```rust
 pub fn refund(
     env: Env,
-    buyer: Address,   // must match the buyer recorded at lock time
+    buyer: Address,   // must match the buyer recorded at Escrow::lock time
     escrow_id: u64,
 )
 ```
 
 The function:
-- Asserts `record.status == Locked`.
+- Asserts `record.buyer == buyer`.
+- Asserts `record.status == EscrowStatus::Locked`.
 - Asserts `env.ledger().timestamp() >= record.timeout` (prevents early reclaim).
-- Transfers `amount` tokens from the Escrow contract back to `record.buyer`.
-- Sets `record.status = Refunded`.
-- Emits a `refunded` event.
+- Transfers `record.amount` tokens from the Escrow contract back to `record.buyer`.
+- Sets `record.status = EscrowStatus::Refunded`.
+- Emits a `refunded` event: topics `["refunded", escrow_id]`, body `buyer_address`.
 
 The `timeout` value is set at lock time from the `timeout` field in the 402
 payment terms.  The SDK surfaces a `refundAfter` date to the agent runtime so it
 can schedule a retry or escalate to the user if delivery does not arrive.
+
+**Reputation consequence:** The indexer detects the `refunded` event and calls
+`Reputation::record_result(seller, false)`, decrementing the seller's trust score.
+
+---
+
+## Reputation Scoring
+
+Reputation state is tracked per-address in the `Reputation` contract.
+
+### Reading a score
+
+```rust
+pub fn get_score(env: Env, subject: Address) -> ReputationScore
+
+pub struct ReputationScore {
+    pub subject: Address,
+    pub successes: u64,
+    pub failures: u64,
+}
+
+pub fn trust_score_bps(env: Env, subject: Address) -> u64
+// Returns successes * 10_000 / (successes + failures), or 0 if no history.
+```
+
+### Backend endpoint: `GET /api/v1/agents/:id/reputation`
+
+`:id` is the agent's Stellar public key.
+
+**Response 200:**
+```json
+{
+  "subject": "GABC...",
+  "successes": 42,
+  "failures": 3,
+  "total": 45,
+  "trustScoreBps": 9333,
+  "recentEvents": [
+    {
+      "id": "...",
+      "contractId": "C...",
+      "eventType": "success",
+      "ledger": 12345678,
+      "ledgerAt": "2025-01-01T00:00:00Z"
+    }
+  ]
+}
+```
+
+The backend aggregates event counts from the Postgres `events` table (populated
+by the indexer) rather than reading from the contract on every request, avoiding
+a round-trip to Soroban RPC on each dashboard load.
+
+---
+
+## End-to-End Flow Summary
+
+```
+1. Seller  →  Marketplace::register_listing(name, token_addr, price_per_call, endpoint)
+             → emits "listed" event → indexer writes to events table
+
+2. Buyer   →  Marketplace::create_request(listing_id, timeout)
+             → cross-contract: Escrow::lock(buyer, seller, token, amount, timeout)
+             → emits "requested" + "locked" events
+             → indexer records both; buyer's funds are held in Escrow
+
+3. Service →  Receives request + escrow proof
+             → Calls GET /api/v1/facilitator/verify?txHash=<lock_tx>
+             → Backend confirms transaction success on Horizon/Soroban RPC
+             → Service delivers the resource
+
+4. Seller  →  Escrow::release(buyer, escrow_id)
+             → funds transferred to seller
+             → emits "released" event → indexer: Reputation::record_result(seller, true)
+
+   OR (on timeout):
+
+4. Buyer   →  Escrow::refund(buyer, escrow_id)   [after timeout]
+             → funds returned to buyer
+             → emits "refunded" event → indexer: Reputation::record_result(seller, false)
+
+5. Anyone  →  GET /api/v1/agents/:seller/reputation
+             → returns trust score derived from on-chain success/failure history
+```
