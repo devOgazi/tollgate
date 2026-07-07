@@ -1,0 +1,17 @@
+{
+  "name": "@tollgate/examples",
+  "version": "0.0.1",
+  "private": true,
+  "scripts": {
+    "agent:demo": "ts-node src/agent-demo.ts"
+  },
+  "dependencies": {
+    "@tollgate/sdk": "workspace:*",
+    "dotenv": "^16.4.5"
+  },
+  "devDependencies": {
+    "@types/node": "^20.14.10",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.5.4"
+  }
+}

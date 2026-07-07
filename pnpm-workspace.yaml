@@ -2,5 +2,6 @@ packages:
   - "frontend"
   - "backend"
   - "sdk/ts"
+  - "examples"
 allowBuilds:
   unrs-resolver: true
