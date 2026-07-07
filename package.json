@@ -12,7 +12,7 @@
     "build": "pnpm -r run build",
     "lint": "pnpm -r run lint",
     "test": "pnpm -r run test",
-    "test:e2e": "pnpm run test:e2e",
+    "test:e2e": "bash scripts/test-e2e.sh",
     "contracts:deploy:testnet": "bash scripts/deploy-contracts.sh testnet"
   },
   "devDependencies": {

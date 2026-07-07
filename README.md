@@ -401,6 +401,29 @@ pnpm run test:e2e
 
 ## Roadmap
 
+### Completed (v0.1.0-alpha)
+- [x] Stellar/Soroban smart contracts: BudgetPolicy, Escrow, Marketplace, Reputation
+- [x] Backend API (Express.js + Postgres) with endpoints for budgets, listings, requests, facilitator verification, and reputation
+- [x] Indexer that listens for Soroban events and writes them to Postgres
+- [x] TypeScript SDK (@tollgate/sdk) with TollgateWallet, Marketplace, and x402Fetch
+- [x] Rust SDK (tollgate-sdk) with wallet, marketplace, and x402 modules
+- [x] Frontend (Next.js + Tailwind) with Wallet view, Marketplace view, and Agent Activity Feed
+- [x] docs/x402-mapping.md complete
+- [x] CONTRIBUTING.md added
+- [x] Examples workspace with agent demo script
+
+### Roadmap
+
+- [x] Micro-budget wallet SDK (TypeScript and Rust)
+- [x] x402-compatible payment flow
+- [x] Autonomous API marketplace
+- [x] BudgetPolicy smart contract (Soroban)
+- [x] Escrow smart contract (Soroban)
+- [x] Marketplace smart contract (Soroban)
+- [x] Reputation smart contract (Soroban)
+- [x] Backend API with Postgres database
+- [x] Frontend dashboard (wallet, marketplace, activity feed)
+- [x] docs/x402-mapping.md completed
 - [ ] Security audit of `BudgetPolicy` and `Escrow` contracts
 - [ ] Mainnet launch (Stellar Pubnet)
 - [ ] Multi-asset support beyond XLM/USDC (any Stellar-issued asset)
@@ -409,6 +432,7 @@ pnpm run test:e2e
 - [ ] SDKs for Python and Go
 - [ ] Marketplace dispute-resolution module for non-atomic delivery cases
 - [ ] Rate-limiting and anti-spam protections at the facilitator layer
+- [ ] Analytics view (tracked in #1)
 
 ## Contributing
 
